@@ -55,14 +55,14 @@ export default function DuoPage() {
           <div className="container-custom">
             <div className="max-w-3xl mx-auto text-center">
               <span className="tag-gold mb-4">
-                Try the Science — $29
+                For Couples
               </span>
               <h1 className="font-[var(--font-playfair)] text-4xl md:text-5xl lg:text-6xl font-bold text-white mt-4 mb-6">
                 Are You Actually Compatible?
               </h1>
               <p className="text-xl text-white/80 mb-8">
-                Test AILO's compatibility assessment with your partner, friend, or someone you're dating.
-                See why the science works — before you invest in full membership.
+                Take AILO's compatibility assessment together. Understand your relationship dynamics —
+                why you connect, where you might clash, and how to grow stronger.
               </p>
               <a href="#download" className="btn-primary text-lg inline-block">
                 Get AILO Duo
@@ -182,10 +182,7 @@ export default function DuoPage() {
               <h2 className="font-[var(--font-playfair)] text-3xl md:text-4xl font-bold text-white mb-4">
                 Ready to Test Your Compatibility?
               </h2>
-              <p className="text-white/80 mb-4">
-                AILO Duo is just $29 — one-time, for both of you.
-              </p>
-              <p className="text-white/60 text-sm mb-8">
+              <p className="text-white/80 mb-8">
                 Two assessments. One compatibility report. Zero guesswork.
               </p>
 

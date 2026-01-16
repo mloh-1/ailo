@@ -162,10 +162,10 @@ export const copy = {
       cta: "Become a Member",
     },
     duoTeaser: {
-      badge: "Not Ready to Commit?",
-      headline: "Try the Science First — $29",
-      subhead: "Test AILO's compatibility assessment with a friend, family member, or someone you're dating. See why it works before you invest in matching.",
-      features: ["Compare with anyone", "See compatibility score", "Instant insights"],
+      badge: "Already Dating Someone?",
+      headline: "Understand Your Relationship Dynamics",
+      subhead: "Take the compatibility assessment together. Discover why you connect, where you might clash, and how to grow stronger as a couple.",
+      features: ["See your compatibility score", "Understand communication styles", "Get relationship insights"],
       cta: "Try AILO Duo",
     },
     faq: {
@@ -499,9 +499,9 @@ export const copy = {
   // ===========================================
   duo: {
     hero: {
-      badge: "Try the Science — $29",
+      badge: "For Couples",
       headline: "Are You Actually Compatible?",
-      subhead: "Test AILO's compatibility assessment with your partner, friend, or someone you're dating. See why the science works — before you invest in full membership.",
+      subhead: "Take AILO's compatibility assessment together. Understand your relationship dynamics — why you connect, where you might clash, and how to grow stronger.",
       cta: "Get AILO Duo",
     },
     whatsIncluded: {
@@ -537,7 +537,6 @@ export const copy = {
     },
     cta: {
       headline: "Ready to Test Your Compatibility?",
-      priceLine: "AILO Duo is just $29 — one-time, for both of you.",
       valueProp: "Two assessments. One compatibility report. Zero guesswork.",
       memberNote: "Already an AILO member? Duo is included free with your membership.",
     },
