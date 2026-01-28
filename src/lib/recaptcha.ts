@@ -40,9 +40,12 @@ export async function verifyRecaptcha(token: string): Promise<{ success: boolean
 
     const data: RecaptchaResponse = await response.json();
 
+    console.log("reCAPTCHA response:", JSON.stringify(data));
+
     if (!data.success) {
       console.error("reCAPTCHA verification failed:", data["error-codes"]);
-      return { success: false, error: "reCAPTCHA verification failed" };
+      console.error("Hostname:", data.hostname);
+      return { success: false, error: `reCAPTCHA verification failed: ${data["error-codes"]?.join(", ") || "unknown error"}` };
     }
 
     // For reCAPTCHA v3, check the score

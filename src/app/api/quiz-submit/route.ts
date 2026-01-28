@@ -201,6 +201,7 @@ export async function POST(request: NextRequest) {
     const { name, email, phone, answers, outcome, recaptchaToken } = body;
 
     // Verify reCAPTCHA
+    console.log("reCAPTCHA token received:", recaptchaToken ? `${recaptchaToken.substring(0, 20)}...` : "NONE");
     const recaptchaResult = await verifyRecaptcha(recaptchaToken || "");
     if (!recaptchaResult.success) {
       return NextResponse.json(
