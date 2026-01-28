@@ -23,10 +23,10 @@ const ANSWER_MAPS = {
     D: "Not fully available right now",
   },
   q4: {
-    A: "Worth it for the right match",
-    B: "Open to it if the fit is right",
-    C: "Need to think about it",
-    D: "Not ready to invest that much",
+    A: "Willing to invest",
+    B: "Open to investing, but not certain",
+    C: "Prefer minimal investment",
+    D: "Not interested in investing",
   },
   q5: {
     A: "As soon as I find the right person",
