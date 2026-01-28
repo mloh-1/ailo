@@ -4,8 +4,10 @@ import { sendCallReminder } from "@/lib/email";
 const HUBSPOT_ACCESS_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN;
 const CRON_SECRET = process.env.CRON_SECRET;
 
-// Reminder schedule: Day 2, Day 4, Day 9 after quiz submission
-const REMINDER_DAYS = [2, 4, 9] as const;
+// Reminder schedule: Minutes after quiz submission (for testing)
+// Change back to days for production: [2, 4, 9]
+const REMINDER_MINUTES = [2, 5, 7] as const;
+const USE_MINUTES = true; // Set to false for production (days)
 
 interface HubSpotContact {
   id: string;
@@ -23,26 +25,37 @@ interface HubSpotSearchResponse {
   results: HubSpotContact[];
 }
 
-function getDateDaysAgo(days: number): { start: string; end: string } {
-  const date = new Date();
-  date.setUTCHours(0, 0, 0, 0);
-  date.setUTCDate(date.getUTCDate() - days);
+function getTimeRange(value: number): { start: number; end: number } {
+  const now = Date.now();
 
-  const start = date.toISOString().split("T")[0];
+  if (USE_MINUTES) {
+    // For testing: use minutes
+    const start = now - (value + 1) * 60 * 1000; // value+1 minutes ago
+    const end = now - value * 60 * 1000;         // value minutes ago
+    return { start, end };
+  } else {
+    // For production: use days
+    const startDate = new Date();
+    startDate.setUTCHours(0, 0, 0, 0);
+    startDate.setUTCDate(startDate.getUTCDate() - value);
 
-  date.setUTCDate(date.getUTCDate() + 1);
-  const end = date.toISOString().split("T")[0];
+    const endDate = new Date(startDate);
+    endDate.setUTCDate(endDate.getUTCDate() + 1);
 
-  return { start, end };
+    return { start: startDate.getTime(), end: endDate.getTime() };
+  }
 }
 
-async function getContactsForReminder(dayNumber: number): Promise<HubSpotContact[]> {
+async function getContactsForReminder(timeValue: number): Promise<HubSpotContact[]> {
   if (!HUBSPOT_ACCESS_TOKEN) {
     console.error("HUBSPOT_ACCESS_TOKEN not configured");
     return [];
   }
 
-  const { start, end } = getDateDaysAgo(dayNumber);
+  const { start, end } = getTimeRange(timeValue);
+  const unit = USE_MINUTES ? "minute" : "day";
+
+  console.log(`Querying for ${unit} ${timeValue}: createdate between ${new Date(start).toISOString()} and ${new Date(end).toISOString()}`);
 
   try {
     const response = await fetch(
@@ -70,12 +83,12 @@ async function getContactsForReminder(dayNumber: number): Promise<HubSpotContact
                 {
                   propertyName: "createdate",
                   operator: "GTE",
-                  value: start,
+                  value: start.toString(),
                 },
                 {
                   propertyName: "createdate",
                   operator: "LT",
-                  value: end,
+                  value: end.toString(),
                 },
               ],
             },
@@ -88,12 +101,12 @@ async function getContactsForReminder(dayNumber: number): Promise<HubSpotContact
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`HubSpot search failed for day ${dayNumber}:`, errorText);
+      console.error(`HubSpot search failed for ${unit} ${timeValue}:`, errorText);
       return [];
     }
 
     const data: HubSpotSearchResponse = await response.json();
-    console.log(`Found ${data.total} contacts for day ${dayNumber} reminder`);
+    console.log(`Found ${data.total} contacts for ${unit} ${timeValue} reminder`);
     return data.results;
   } catch (error) {
     console.error(`Error fetching contacts for day ${dayNumber}:`, error);
@@ -133,15 +146,18 @@ export async function GET(request: NextRequest) {
     reminder3: { sent: 0, failed: 0, contacts: [] as string[] },
   };
 
-  // Process each reminder day
-  for (let i = 0; i < REMINDER_DAYS.length; i++) {
-    const dayNumber = REMINDER_DAYS[i];
+  // Process each reminder
+  const schedule = USE_MINUTES ? REMINDER_MINUTES : [2, 4, 9];
+  const unit = USE_MINUTES ? "minute" : "day";
+
+  for (let i = 0; i < schedule.length; i++) {
+    const timeValue = schedule[i];
     const reminderNumber = (i + 1) as 1 | 2 | 3;
     const resultKey = `reminder${reminderNumber}` as keyof typeof results;
 
-    console.log(`Processing reminder #${reminderNumber} (day ${dayNumber})...`);
+    console.log(`Processing reminder #${reminderNumber} (${unit} ${timeValue})...`);
 
-    const contacts = await getContactsForReminder(dayNumber);
+    const contacts = await getContactsForReminder(timeValue);
 
     for (const contact of contacts) {
       const email = contact.properties.email;
