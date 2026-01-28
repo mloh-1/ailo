@@ -109,7 +109,7 @@ async function getContactsForReminder(timeValue: number): Promise<HubSpotContact
     console.log(`Found ${data.total} contacts for ${unit} ${timeValue} reminder`);
     return data.results;
   } catch (error) {
-    console.error(`Error fetching contacts for day ${dayNumber}:`, error);
+    console.error(`Error fetching contacts for ${unit} ${timeValue}:`, error);
     return [];
   }
 }
