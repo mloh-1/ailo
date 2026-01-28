@@ -4,10 +4,12 @@ import { sendCallReminder } from "@/lib/email";
 const HUBSPOT_ACCESS_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN;
 const CRON_SECRET = process.env.CRON_SECRET;
 
-// Reminder schedule: Minutes after quiz submission (for testing)
-// Change back to days for production: [2, 4, 9]
-const REMINDER_MINUTES = [2, 5, 7] as const;
-const USE_MINUTES = true; // Set to false for production (days)
+// Reminder schedule in days after quiz submission
+const REMINDER_DAYS = [2, 4, 9] as const;
+
+// Parallel email sending configuration
+const BATCH_SIZE = 10; // Send 10 emails in parallel
+const MAX_CONTACTS_PER_REMINDER = 500; // Safety limit
 
 interface HubSpotContact {
   id: string;
@@ -23,95 +25,150 @@ interface HubSpotContact {
 interface HubSpotSearchResponse {
   total: number;
   results: HubSpotContact[];
+  paging?: {
+    next?: {
+      after: string;
+    };
+  };
 }
 
-function getTimeRange(value: number): { start: number; end: number } {
-  const now = Date.now();
+function getDateRange(days: number): { start: number; end: number } {
+  const startDate = new Date();
+  startDate.setUTCHours(0, 0, 0, 0);
+  startDate.setUTCDate(startDate.getUTCDate() - days);
 
-  if (USE_MINUTES) {
-    // For testing: use minutes
-    const start = now - (value + 1) * 60 * 1000; // value+1 minutes ago
-    const end = now - value * 60 * 1000;         // value minutes ago
-    return { start, end };
-  } else {
-    // For production: use days
-    const startDate = new Date();
-    startDate.setUTCHours(0, 0, 0, 0);
-    startDate.setUTCDate(startDate.getUTCDate() - value);
+  const endDate = new Date(startDate);
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
 
-    const endDate = new Date(startDate);
-    endDate.setUTCDate(endDate.getUTCDate() + 1);
-
-    return { start: startDate.getTime(), end: endDate.getTime() };
-  }
+  return { start: startDate.getTime(), end: endDate.getTime() };
 }
 
-async function getContactsForReminder(timeValue: number): Promise<HubSpotContact[]> {
+async function getContactsForReminder(dayNumber: number): Promise<HubSpotContact[]> {
   if (!HUBSPOT_ACCESS_TOKEN) {
     console.error("HUBSPOT_ACCESS_TOKEN not configured");
     return [];
   }
 
-  const { start, end } = getTimeRange(timeValue);
-  const unit = USE_MINUTES ? "minute" : "day";
+  const { start, end } = getDateRange(dayNumber);
+  const allContacts: HubSpotContact[] = [];
+  let after: string | undefined = undefined;
 
-  console.log(`Querying for ${unit} ${timeValue}: createdate between ${new Date(start).toISOString()} and ${new Date(end).toISOString()}`);
+  console.log(`Querying for day ${dayNumber}: createdate between ${new Date(start).toISOString()} and ${new Date(end).toISOString()}`);
 
   try {
-    const response = await fetch(
-      "https://api.hubapi.com/crm/v3/objects/contacts/search",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
-        },
-        body: JSON.stringify({
-          filterGroups: [
-            {
-              filters: [
-                {
-                  propertyName: "quiz_outcome",
-                  operator: "EQ",
-                  value: "Qualified",
-                },
-                {
-                  propertyName: "call_status",
-                  operator: "NEQ",
-                  value: "Call Scheduled",
-                },
-                {
-                  propertyName: "createdate",
-                  operator: "GTE",
-                  value: start.toString(),
-                },
-                {
-                  propertyName: "createdate",
-                  operator: "LT",
-                  value: end.toString(),
-                },
-              ],
-            },
-          ],
-          properties: ["firstname", "email", "createdate", "quiz_outcome", "call_status"],
-          limit: 100,
-        }),
+    // Paginate through all results
+    do {
+      const response = await fetch(
+        "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+          },
+          body: JSON.stringify({
+            filterGroups: [
+              {
+                filters: [
+                  {
+                    propertyName: "quiz_outcome",
+                    operator: "EQ",
+                    value: "Qualified",
+                  },
+                  {
+                    propertyName: "call_status",
+                    operator: "NEQ",
+                    value: "Call Scheduled",
+                  },
+                  {
+                    propertyName: "createdate",
+                    operator: "GTE",
+                    value: start.toString(),
+                  },
+                  {
+                    propertyName: "createdate",
+                    operator: "LT",
+                    value: end.toString(),
+                  },
+                ],
+              },
+            ],
+            properties: ["firstname", "email", "createdate", "quiz_outcome", "call_status"],
+            limit: 100,
+            ...(after && { after }),
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`HubSpot search failed for day ${dayNumber}:`, errorText);
+        break;
       }
-    );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`HubSpot search failed for ${unit} ${timeValue}:`, errorText);
-      return [];
-    }
+      const data: HubSpotSearchResponse = await response.json();
+      allContacts.push(...data.results);
 
-    const data: HubSpotSearchResponse = await response.json();
-    console.log(`Found ${data.total} contacts for ${unit} ${timeValue} reminder`);
-    return data.results;
+      after = data.paging?.next?.after;
+
+      // Safety limit to prevent runaway queries
+      if (allContacts.length >= MAX_CONTACTS_PER_REMINDER) {
+        console.warn(`Hit max contacts limit (${MAX_CONTACTS_PER_REMINDER}) for day ${dayNumber}`);
+        break;
+      }
+    } while (after);
+
+    console.log(`Found ${allContacts.length} contacts for day ${dayNumber} reminder`);
+    return allContacts;
   } catch (error) {
-    console.error(`Error fetching contacts for ${unit} ${timeValue}:`, error);
+    console.error(`Error fetching contacts for day ${dayNumber}:`, error);
     return [];
   }
+}
+
+// Send emails in parallel batches
+async function sendEmailBatch(
+  contacts: HubSpotContact[],
+  reminderNumber: 1 | 2 | 3
+): Promise<{ sent: number; failed: number; emails: string[] }> {
+  const results = { sent: 0, failed: 0, emails: [] as string[] };
+
+  // Process in batches
+  for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+    const batch = contacts.slice(i, i + BATCH_SIZE);
+
+    const promises = batch.map(async (contact) => {
+      const email = contact.properties.email;
+      const name = contact.properties.firstname || "there";
+
+      if (!email) {
+        console.warn(`Contact ${contact.id} has no email, skipping`);
+        return { success: false, email: null };
+      }
+
+      try {
+        await sendCallReminder(email, name, reminderNumber);
+        console.log(`Sent reminder #${reminderNumber} to ${email}`);
+        return { success: true, email };
+      } catch (error) {
+        console.error(`Failed to send reminder #${reminderNumber} to ${email}:`, error);
+        return { success: false, email };
+      }
+    });
+
+    const batchResults = await Promise.all(promises);
+
+    for (const result of batchResults) {
+      if (result.success && result.email) {
+        results.sent++;
+        results.emails.push(result.email);
+      } else if (result.email) {
+        results.failed++;
+      }
+    }
+  }
+
+  return results;
 }
 
 export async function GET(request: NextRequest) {
@@ -146,38 +203,29 @@ export async function GET(request: NextRequest) {
     reminder3: { sent: 0, failed: 0, contacts: [] as string[] },
   };
 
-  // Process each reminder
-  const schedule = USE_MINUTES ? REMINDER_MINUTES : [2, 4, 9];
-  const unit = USE_MINUTES ? "minute" : "day";
-
-  for (let i = 0; i < schedule.length; i++) {
-    const timeValue = schedule[i];
+  // Process each reminder day in parallel
+  const reminderPromises = REMINDER_DAYS.map(async (dayNumber, i) => {
     const reminderNumber = (i + 1) as 1 | 2 | 3;
-    const resultKey = `reminder${reminderNumber}` as keyof typeof results;
+    console.log(`Processing reminder #${reminderNumber} (day ${dayNumber})...`);
 
-    console.log(`Processing reminder #${reminderNumber} (${unit} ${timeValue})...`);
+    const contacts = await getContactsForReminder(dayNumber);
 
-    const contacts = await getContactsForReminder(timeValue);
-
-    for (const contact of contacts) {
-      const email = contact.properties.email;
-      const name = contact.properties.firstname || "there";
-
-      if (!email) {
-        console.warn(`Contact ${contact.id} has no email, skipping`);
-        continue;
-      }
-
-      try {
-        await sendCallReminder(email, name, reminderNumber);
-        results[resultKey].sent++;
-        results[resultKey].contacts.push(email);
-        console.log(`Sent reminder #${reminderNumber} to ${email}`);
-      } catch (error) {
-        results[resultKey].failed++;
-        console.error(`Failed to send reminder #${reminderNumber} to ${email}:`, error);
-      }
+    if (contacts.length === 0) {
+      return { reminderNumber, sent: 0, failed: 0, emails: [] };
     }
+
+    const emailResults = await sendEmailBatch(contacts, reminderNumber);
+    return { reminderNumber, ...emailResults };
+  });
+
+  const reminderResults = await Promise.all(reminderPromises);
+
+  // Aggregate results
+  for (const result of reminderResults) {
+    const key = `reminder${result.reminderNumber}` as keyof typeof results;
+    results[key].sent = result.sent;
+    results[key].failed = result.failed;
+    results[key].contacts = result.emails;
   }
 
   const summary = {
