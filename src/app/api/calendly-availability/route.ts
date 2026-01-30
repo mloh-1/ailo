@@ -1,36 +1,20 @@
 import { NextResponse } from "next/server";
-
-const CALENDLY_API_BASE = "https://api.calendly.com";
-
-async function calendlyFetch(endpoint: string) {
-  const response = await fetch(`${CALENDLY_API_BASE}${endpoint}`, {
-    headers: {
-      Authorization: `Bearer ${process.env.CALENDLY_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Calendly API error: ${response.status}`);
-  }
-
-  return response.json();
-}
+import { calendlyFetch } from "@/lib/calendly-oauth";
 
 export async function GET() {
   try {
-    if (!process.env.CALENDLY_API_KEY) {
-      return NextResponse.json({ slots: null, error: "API key not configured" });
+    if (!process.env.CALENDLY_REFRESH_TOKEN) {
+      return NextResponse.json({ slots: null, error: "Calendly OAuth not configured" });
     }
 
     // Step 1: Get current user to get their URI
-    const userResponse = await calendlyFetch("/users/me");
+    const userResponse = await calendlyFetch("/users/me") as { resource: { uri: string } };
     const userUri = userResponse.resource.uri;
 
     // Step 2: Get event types for this user
     const eventTypesResponse = await calendlyFetch(
       `/event_types?user=${encodeURIComponent(userUri)}&active=true`
-    );
+    ) as { collection: { scheduling_url: string; uri: string }[] };
 
     // Find the event type that matches our configured URL
     const calendlyUrl = process.env.NEXT_PUBLIC_CALENDLY_URL || "";
@@ -70,7 +54,7 @@ export async function GET() {
       `/event_type_available_times?event_type=${encodeURIComponent(
         matchingEventType.uri
       )}&start_time=${startTime}&end_time=${endTime}`
-    );
+    ) as { collection: unknown[] };
 
     const availableSlots = availabilityResponse.collection || [];
     const slotCount = availableSlots.length;
