@@ -3,12 +3,7 @@ import { db, initializeDatabase } from "@/lib/db";
 import { sendWaitlistConfirmation } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { verifyRecaptcha } from "@/lib/recaptcha";
-import {
-  buildHubSpotContactPayload,
-  getLocationText,
-  getFullAnswerText,
-  QuizSubmissionInput,
-} from "@/lib/hubspot";
+import { getLocationText, getFullAnswerText } from "@/lib/quiz-helpers";
 
 // Server-side validation helpers
 function isValidEmail(email: string): boolean {
@@ -51,135 +46,13 @@ interface QuizSubmission {
   recaptchaToken?: string;
 }
 
-// Check if contact exists in HubSpot and has a call scheduled
-async function checkHubSpotCallStatus(email: string): Promise<{ exists: boolean; callScheduled: boolean }> {
-  const hubspotToken = process.env.HUBSPOT_ACCESS_TOKEN;
-
-  if (!hubspotToken) {
-    return { exists: false, callScheduled: false };
-  }
-
-  try {
-    // Search for contact by email
-    const searchResponse = await fetch(
-      "https://api.hubapi.com/crm/v3/objects/contacts/search",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${hubspotToken}`,
-        },
-        body: JSON.stringify({
-          filterGroups: [
-            {
-              filters: [
-                {
-                  propertyName: "email",
-                  operator: "EQ",
-                  value: email,
-                },
-              ],
-            },
-          ],
-          properties: ["email", "call_status"],
-        }),
-      }
-    );
-
-    if (!searchResponse.ok) {
-      console.error("HubSpot search error:", await searchResponse.text());
-      return { exists: false, callScheduled: false };
-    }
-
-    const searchData = await searchResponse.json();
-
-    if (searchData.total === 0) {
-      return { exists: false, callScheduled: false };
-    }
-
-    const contact = searchData.results[0];
-    const callStatus = contact.properties?.call_status;
-
-    console.log("Found existing contact, call_status:", callStatus);
-
-    return {
-      exists: true,
-      callScheduled: callStatus === "Call Scheduled",
-    };
-  } catch (error) {
-    console.error("Error checking HubSpot call status:", error);
-    return { exists: false, callScheduled: false };
-  }
-}
-
-async function sendToHubSpot(data: QuizSubmission) {
-  const hubspotToken = process.env.HUBSPOT_ACCESS_TOKEN;
-
-  if (!hubspotToken) {
-    console.warn("HUBSPOT_ACCESS_TOKEN not configured, skipping HubSpot sync");
-    return;
-  }
-
-  // Build payload using DTO
-  const input: QuizSubmissionInput = {
-    name: data.name,
-    email: data.email,
-    phone: data.phone,
-    answers: data.answers,
-    outcome: data.outcome as "qualified" | "waitlist" | "not-ready",
-  };
-
-  const contactData = buildHubSpotContactPayload(input);
-
-  try {
-    console.log("Sending to HubSpot:", JSON.stringify(contactData, null, 2));
-
-    // Try to create contact
-    const createResponse = await fetch(
-      "https://api.hubapi.com/crm/v3/objects/contacts",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${hubspotToken}`,
-        },
-        body: JSON.stringify(contactData),
-      }
-    );
-
-    const responseText = await createResponse.text();
-    console.log("HubSpot response status:", createResponse.status);
-    console.log("HubSpot response:", responseText);
-
-    // If contact exists (409 conflict), update instead
-    if (createResponse.status === 409) {
-      const errorData = JSON.parse(responseText);
-      const existingContactId = errorData.message?.match(/Existing ID: (\d+)/)?.[1];
-
-      if (existingContactId) {
-        console.log("Contact exists, updating ID:", existingContactId);
-        const updateResponse = await fetch(
-          `https://api.hubapi.com/crm/v3/objects/contacts/${existingContactId}`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${hubspotToken}`,
-            },
-            body: JSON.stringify(contactData),
-          }
-        );
-        console.log("HubSpot update status:", updateResponse.status);
-      }
-    } else if (!createResponse.ok) {
-      console.error("HubSpot API error:", responseText);
-    } else {
-      console.log("HubSpot contact created successfully");
-    }
-  } catch (error) {
-    console.error("Error sending to HubSpot:", error);
-  }
-}
+// TODO: CRM integration removed - will be rewired to new CRM later
+// Previous HubSpot integration included:
+// - checkCrmCallStatus(email): Check if user already has a call scheduled
+// - sendToCrm(data): Create/update contact with quiz data
+// Contact properties needed: firstname, email, phone, location, intent,
+// availability, investment, timeline, quiz_outcome, user_status,
+// access_to_ailo_unlimited, call_status
 
 export async function POST(request: NextRequest) {
   try {
@@ -262,14 +135,8 @@ export async function POST(request: NextRequest) {
     const sanitizedEmail = sanitizeString(email).toLowerCase();
     const sanitizedPhone = sanitizeString(phone);
 
-    // Check if contact already has a call scheduled in HubSpot
-    const hubspotStatus = await checkHubSpotCallStatus(sanitizedEmail);
-    if (hubspotStatus.callScheduled) {
-      return NextResponse.json(
-        { error: "call_already_scheduled", message: "You already have a call scheduled with us!" },
-        { status: 409 }
-      );
-    }
+    // TODO: Add CRM check for existing call scheduled when new CRM is wired
+    // Previously checked HubSpot call_status === "Call Scheduled"
 
     console.log("Step 1: Initializing database...");
     await initializeDatabase();
@@ -297,20 +164,12 @@ export async function POST(request: NextRequest) {
     });
     console.log("Step 2: Saved to Turso database");
 
-    // Send to HubSpot (with sanitized data)
-    console.log("Step 3: Sending to HubSpot...");
-    await sendToHubSpot({
-      name: sanitizedName,
-      email: sanitizedEmail,
-      phone: sanitizedPhone,
-      answers,
-      outcome,
-    });
-    console.log("Step 3: Sent to HubSpot");
+    // TODO: Send to CRM when new CRM is wired
+    // Previously sent: name, email, phone, answers (q1-q5), outcome
 
     // If waitlist outcome, also add to waitlist_subscribers and send confirmation email
     if (outcome === "waitlist") {
-      console.log("Step 4: Processing waitlist...");
+      console.log("Step 3: Processing waitlist...");
       // Get city from Q1 answer for waitlist record
       const locationMap: Record<string, string> = {
         B: "Florida (outside South Florida)",
@@ -325,18 +184,18 @@ export async function POST(request: NextRequest) {
           sql: `INSERT INTO waitlist_subscribers (email, city) VALUES (?, ?)`,
           args: [sanitizedEmail, city],
         });
-        console.log("Step 4a: Added to waitlist_subscribers");
+        console.log("Step 3a: Added to waitlist_subscribers");
       } catch (e) {
-        console.log("Step 4a: Duplicate email, skipping waitlist insert");
+        console.log("Step 3a: Duplicate email, skipping waitlist insert");
       }
 
       // Send waitlist confirmation email (non-blocking - don't fail submission if email fails)
-      console.log("Step 4b: Sending waitlist confirmation email...");
+      console.log("Step 3b: Sending waitlist confirmation email...");
       try {
         await sendWaitlistConfirmation(sanitizedEmail, city);
-        console.log("Step 4b: Sent waitlist confirmation email");
+        console.log("Step 3b: Sent waitlist confirmation email");
       } catch (emailError) {
-        console.error("Step 4b: Failed to send waitlist email (non-blocking):", emailError);
+        console.error("Step 3b: Failed to send waitlist email (non-blocking):", emailError);
       }
     }
 

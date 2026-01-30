@@ -1,14 +1,5 @@
-import {
-  HubSpotContactPayload,
-  QuizSubmissionInput,
-  QUIZ_OUTCOMES,
-  LOCATIONS,
-  ACCESS_STATUS,
-  USER_STATUS,
-  LEAD_SOURCE,
-} from "./types";
+// Quiz answer text mappings - used for database storage and future CRM integration
 
-// Maps for converting answer codes to full text
 const ANSWER_MAPS = {
   q2: {
     A: "A committed relationship — I'm ready",
@@ -44,43 +35,6 @@ function getAnswerText(question: keyof typeof ANSWER_MAPS, code: string): string
 }
 
 /**
- * Build HubSpot contact payload from quiz submission
- */
-export function buildHubSpotContactPayload(input: QuizSubmissionInput): HubSpotContactPayload {
-  const { name, email, phone, answers, outcome } = input;
-
-  // Location: South Florida (Q1=A) or Outside South Florida (Q1=B,C,D)
-  const location = answers.q1 === "A"
-    ? LOCATIONS.southFlorida
-    : LOCATIONS.outsideSouthFlorida;
-
-  // Access to AILO Unlimited: Rejected if not-ready, otherwise In Review
-  const accessToAiloUnlimited = outcome === "not-ready"
-    ? ACCESS_STATUS.rejected
-    : ACCESS_STATUS.inReview;
-
-  // Map outcome to HubSpot format (capitalized)
-  const quizOutcome = QUIZ_OUTCOMES[outcome];
-
-  return {
-    properties: {
-      firstname: name,
-      email: email,
-      phone: phone,
-      lead_soource: LEAD_SOURCE.website,
-      location: location,
-      intent: getAnswerText("q2", answers.q2 || ""),
-      availability: getAnswerText("q3", answers.q3 || ""),
-      investment: getAnswerText("q4", answers.q4 || ""),
-      timeline: getAnswerText("q5", answers.q5 || ""),
-      quiz_outcome: quizOutcome,
-      user_status: USER_STATUS.noInfo,
-      access_to_ailo_unlimited: accessToAiloUnlimited,
-    },
-  };
-}
-
-/**
  * Get full answer text for database storage
  */
 export function getFullAnswerText(question: "q2" | "q3" | "q4" | "q5", code: string): string {
@@ -98,4 +52,36 @@ export function getLocationText(q1Answer: string): string {
     D: "Outside the U.S.",
   };
   return locationMap[q1Answer] || "";
+}
+
+// CRM-related types for future integration
+export interface QuizSubmissionData {
+  name: string;
+  email: string;
+  phone: string;
+  answers: {
+    q1?: string; // Location
+    q2?: string; // Intent
+    q3?: string; // Availability
+    q4?: string; // Investment
+    q5?: string; // Timeline
+  };
+  outcome: "qualified" | "waitlist" | "not-ready";
+}
+
+// CRM contact properties that will be needed for any CRM integration
+export interface CrmContactProperties {
+  firstname: string;
+  email: string;
+  phone: string;
+  lead_source: string;
+  location: string;
+  intent: string;
+  availability: string;
+  investment: string;
+  timeline: string;
+  quiz_outcome: string;
+  user_status: string;
+  access_status: string;
+  call_status?: string;
 }
