@@ -115,40 +115,36 @@ export function QuizContainer() {
         return;
       }
 
-      // Get the booking UUID from response and store in sessionStorage
-      const responseData = await response.json();
-      if (responseData.bookingUuid) {
-        sessionStorage.setItem(
-          "quizData",
-          JSON.stringify({
-            answers,
-            contact: data,
-            result,
-            bookingUuid: responseData.bookingUuid,
-          })
-        );
+      // Store contact data in sessionStorage for Calendly prefill
+      // (booking UUID is stored in HTTP-only cookie by the API)
+      sessionStorage.setItem(
+        "quizData",
+        JSON.stringify({
+          answers,
+          contact: data,
+          result,
+        })
+      );
+
+      setIsLoading(false);
+
+      // Redirect based on outcome
+      switch (result.outcome) {
+        case "qualified":
+          router.push("/book-call");
+          return;
+        case "waitlist":
+          setStep("waitlist-confirmed");
+          return;
+        case "not-ready":
+          router.push("/not-ready");
+          return;
       }
     } catch (error) {
       console.error("Error submitting quiz:", error);
       setSubmissionError("Something went wrong. Please try again.");
       setIsLoading(false);
       return;
-    }
-
-    setIsLoading(false);
-
-    // Redirect based on outcome
-    switch (result.outcome) {
-      case "qualified":
-        router.push("/book-call");
-        break;
-      case "waitlist":
-        // Show inline confirmation instead of redirecting
-        setStep("waitlist-confirmed");
-        break;
-      case "not-ready":
-        router.push("/not-ready");
-        break;
     }
   };
 

@@ -114,10 +114,19 @@ When a user books a call via Calendly, the webhook receives the `booking_uuid` a
 The website uses a UUID-based linking system to connect quiz submissions with Calendly bookings:
 
 1. **Quiz Submission**: When a user submits the quiz, a unique `booking_uuid` is generated and stored in the database
-2. **Calendly Prefill**: The UUID is passed to Calendly as a hidden field (`a2` parameter)
-3. **Webhook**: When booking is confirmed, Calendly sends the UUID back, allowing us to:
+2. **HTTP-Only Cookie**: The UUID is stored in a secure HTTP-only cookie (invisible to user, not in URL)
+3. **Book-Call Page**: Reads the UUID from the cookie and passes it to CalendlyEmbed
+4. **Calendly Prefill**: The UUID is passed to Calendly as a hidden field (`a2` parameter)
+5. **Webhook**: When booking is confirmed, Calendly sends the UUID back, allowing us to:
    - Link the booking to the original quiz submission
    - Store `email_calendly` (the email used in Calendly, which may differ from quiz form email)
+
+**Cookie Details:**
+- Name: `booking_id`
+- HttpOnly: true (not accessible via JavaScript)
+- Secure: true in production
+- SameSite: strict
+- MaxAge: 24 hours
 
 #### Database Schema
 

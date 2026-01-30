@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
+import { cookies } from "next/headers";
 import { CalendlyEmbed } from "@/components/CalendlyEmbed";
 import { SlotAvailability } from "@/components/SlotAvailability";
 
@@ -10,7 +11,10 @@ export const metadata: Metadata = {
     "Schedule your personal consultation with AILO. Discover how science-backed matching can transform your dating life.",
 };
 
-export default function BookCallPage() {
+export default async function BookCallPage() {
+  // Read booking UUID from HTTP-only cookie (set during quiz submission)
+  const cookieStore = await cookies();
+  const bookingId = cookieStore.get("booking_id")?.value || "";
   return (
     <main className="min-h-screen bg-[var(--color-primary-dark)]">
       {/* Header */}
@@ -89,7 +93,7 @@ export default function BookCallPage() {
 
                 {/* Calendly Embed Area */}
                 <div className="p-2">
-                  <CalendlyEmbed />
+                  <CalendlyEmbed bookingId={bookingId} />
                 </div>
               </div>
 

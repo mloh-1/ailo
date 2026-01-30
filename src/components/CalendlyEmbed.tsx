@@ -15,7 +15,11 @@ declare global {
   }
 }
 
-export function CalendlyEmbed() {
+interface CalendlyEmbedProps {
+  bookingId?: string;
+}
+
+export function CalendlyEmbed({ bookingId }: CalendlyEmbedProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -61,11 +65,10 @@ export function CalendlyEmbed() {
   useEffect(() => {
     if (!calendlyUrl || !containerRef.current || isInitialized) return;
 
-    // Get prefill data from sessionStorage
+    // Get prefill data from sessionStorage (contact info only)
     let prefillEmail = "";
     let prefillName = "";
     let prefillPhone = "";
-    let bookingUuid = "";
     const quizDataStr = sessionStorage.getItem("quizData");
     if (quizDataStr) {
       try {
@@ -78,9 +81,6 @@ export function CalendlyEmbed() {
         }
         if (quizData.contact?.phone) {
           prefillPhone = quizData.contact.phone;
-        }
-        if (quizData.bookingUuid) {
-          bookingUuid = quizData.bookingUuid;
         }
       } catch {
         console.error("Failed to parse quiz data");
@@ -96,7 +96,7 @@ export function CalendlyEmbed() {
         if (prefillName) params.set("name", prefillName);
         if (prefillEmail) params.set("email", prefillEmail);
         if (prefillPhone) params.set("a1", prefillPhone);
-        if (bookingUuid) params.set("a2", bookingUuid);
+        if (bookingId) params.set("a2", bookingId);
         params.set("background_color", "2d3a40");
         params.set("text_color", "ebebeb");
         params.set("primary_color", "e1b98f");

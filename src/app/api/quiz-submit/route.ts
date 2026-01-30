@@ -205,7 +205,18 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("Quiz submission completed successfully");
-    return NextResponse.json({ success: true, bookingUuid });
+
+    // Set booking UUID in HTTP-only cookie for the book-call page
+    const response = NextResponse.json({ success: true, bookingUuid });
+    response.cookies.set("booking_id", bookingUuid, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 60 * 60 * 24, // 24 hours
+      path: "/",
+    });
+
+    return response;
   } catch (error) {
     console.error("Error saving quiz submission:", error);
     console.error("Error details:", error instanceof Error ? error.message : String(error));
