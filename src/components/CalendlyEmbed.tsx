@@ -21,8 +21,9 @@ export function CalendlyEmbed() {
   const [isInitialized, setIsInitialized] = useState(false);
   const calendlyUrl = process.env.NEXT_PUBLIC_CALENDLY_URL || "";
 
-  // Save quiz data to database and send confirmation email when booking is confirmed
-  const saveQuizData = async () => {
+  // Send confirmation email when booking is confirmed
+  // (Quiz data is already saved to DB during form submission)
+  const sendBookingConfirmation = async () => {
     const quizDataStr = sessionStorage.getItem("quizData");
     if (!quizDataStr) return;
 
@@ -30,20 +31,6 @@ export function CalendlyEmbed() {
       const quizData = JSON.parse(quizDataStr);
       const name = quizData.contact?.name || "";
       const email = quizData.contact?.email || "";
-
-      // Save to database
-      await fetch("/api/quiz-submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          email,
-          phone: quizData.contact?.phone || "",
-          answers: quizData.answers || {},
-          score: quizData.result?.score,
-          outcome: quizData.result?.outcome || "qualified",
-        }),
-      });
 
       // Send booking confirmation email
       if (email && name) {
@@ -54,7 +41,7 @@ export function CalendlyEmbed() {
         });
       }
     } catch (error) {
-      console.error("Failed to save quiz submission:", error);
+      console.error("Failed to send booking confirmation:", error);
     }
   };
 
@@ -63,7 +50,7 @@ export function CalendlyEmbed() {
     const handleCalendlyEvent = (e: MessageEvent) => {
       if (e.data.event === "calendly.event_scheduled") {
         trackCallBooked();
-        saveQuizData();
+        sendBookingConfirmation();
       }
     };
 
@@ -78,6 +65,7 @@ export function CalendlyEmbed() {
     let prefillEmail = "";
     let prefillName = "";
     let prefillPhone = "";
+    let bookingUuid = "";
     const quizDataStr = sessionStorage.getItem("quizData");
     if (quizDataStr) {
       try {
@@ -91,6 +79,9 @@ export function CalendlyEmbed() {
         if (quizData.contact?.phone) {
           prefillPhone = quizData.contact.phone;
         }
+        if (quizData.bookingUuid) {
+          bookingUuid = quizData.bookingUuid;
+        }
       } catch {
         console.error("Failed to parse quiz data");
       }
@@ -100,11 +91,12 @@ export function CalendlyEmbed() {
       if (window.Calendly && containerRef.current && !isInitialized) {
         setIsInitialized(true);
 
-        // Build URL with colors
+        // Build URL with colors and prefill data
         const params = new URLSearchParams();
         if (prefillName) params.set("name", prefillName);
         if (prefillEmail) params.set("email", prefillEmail);
         if (prefillPhone) params.set("a1", prefillPhone);
+        if (bookingUuid) params.set("a2", bookingUuid);
         params.set("background_color", "2d3a40");
         params.set("text_color", "ebebeb");
         params.set("primary_color", "e1b98f");

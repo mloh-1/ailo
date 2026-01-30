@@ -114,6 +114,20 @@ export function QuizContainer() {
         setIsLoading(false);
         return;
       }
+
+      // Get the booking UUID from response and store in sessionStorage
+      const responseData = await response.json();
+      if (responseData.bookingUuid) {
+        sessionStorage.setItem(
+          "quizData",
+          JSON.stringify({
+            answers,
+            contact: data,
+            result,
+            bookingUuid: responseData.bookingUuid,
+          })
+        );
+      }
     } catch (error) {
       console.error("Error submitting quiz:", error);
       setSubmissionError("Something went wrong. Please try again.");

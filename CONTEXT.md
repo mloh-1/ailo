@@ -105,15 +105,66 @@ Using cron-job.org (free tier):
 
 ---
 
-### 3. Calendly Webhook (Optional - for call status updates)
+### 3. Calendly Webhook (for linking bookings)
 
-When a user books a call via Calendly, update their CRM status.
+When a user books a call via Calendly, the webhook receives the `booking_uuid` and can update the database record.
+
+#### Booking UUID System
+
+The website uses a UUID-based linking system to connect quiz submissions with Calendly bookings:
+
+1. **Quiz Submission**: When a user submits the quiz, a unique `booking_uuid` is generated and stored in the database
+2. **Calendly Prefill**: The UUID is passed to Calendly as a hidden field (`a2` parameter)
+3. **Webhook**: When booking is confirmed, Calendly sends the UUID back, allowing us to:
+   - Link the booking to the original quiz submission
+   - Store `email_calendly` (the email used in Calendly, which may differ from quiz form email)
+
+#### Database Schema
+
+```sql
+quiz_submissions (
+  id INTEGER PRIMARY KEY,
+  booking_uuid TEXT UNIQUE,      -- UUID generated at quiz submission
+  name TEXT,
+  email TEXT,                    -- Email from quiz form
+  email_calendly TEXT,           -- Email from Calendly booking (set by webhook)
+  phone TEXT,
+  -- ... other fields
+)
+```
+
+#### Calendly Custom Questions Setup
+
+In Calendly, create custom questions:
+- **a1**: Phone number (Text, can be hidden)
+- **a2**: Booking UUID (Text, should be hidden)
+
+#### Webhook Handler
 
 ```typescript
 // In a Calendly webhook handler
-async function updateCrmCallStatus(email: string, status: string): Promise<void> {
-  // Search for contact by email
-  // Update call_status property to "Call Scheduled"
+export async function POST(request: NextRequest) {
+  const payload = await request.json();
+
+  if (payload.event === "invitee.created") {
+    const invitee = payload.payload.invitee;
+    const answers = invitee.questions_and_answers || [];
+
+    // Extract booking UUID from a2 field
+    const bookingUuid = answers.find((a) => a.position === 1)?.answer || "";
+    const emailCalendly = invitee.email;
+
+    if (bookingUuid) {
+      // Update database record with Calendly email
+      await db.execute({
+        sql: `UPDATE quiz_submissions SET email_calendly = ? WHERE booking_uuid = ?`,
+        args: [emailCalendly, bookingUuid],
+      });
+
+      // Also update CRM call_status to "Call Scheduled"
+      await updateCrmCallStatus(bookingUuid, "Call Scheduled");
+    }
+  }
 }
 ```
 

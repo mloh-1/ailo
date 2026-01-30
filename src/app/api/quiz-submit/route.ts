@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { db, initializeDatabase } from "@/lib/db";
 import { sendWaitlistConfirmation } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -142,14 +143,18 @@ export async function POST(request: NextRequest) {
     await initializeDatabase();
     console.log("Step 1: Database initialized");
 
+    // Generate unique booking UUID for linking quiz submission to Calendly booking
+    const bookingUuid = randomUUID();
+
     // Save to Turso database with full answer text (using sanitized inputs)
     console.log("Step 2: Saving to Turso database...");
     await db.execute({
       sql: `
-        INSERT INTO quiz_submissions (name, email, phone, location, intent, availability, investment, timeline, outcome, lead_source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO quiz_submissions (booking_uuid, name, email, phone, location, intent, availability, investment, timeline, outcome, lead_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
+        bookingUuid,
         sanitizedName,
         sanitizedEmail,
         sanitizedPhone,
@@ -162,7 +167,7 @@ export async function POST(request: NextRequest) {
         "website",
       ],
     });
-    console.log("Step 2: Saved to Turso database");
+    console.log("Step 2: Saved to Turso database with UUID:", bookingUuid);
 
     // TODO: Send to CRM when new CRM is wired
     // Previously sent: name, email, phone, answers (q1-q5), outcome
@@ -200,7 +205,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("Quiz submission completed successfully");
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, bookingUuid });
   } catch (error) {
     console.error("Error saving quiz submission:", error);
     console.error("Error details:", error instanceof Error ? error.message : String(error));

@@ -10,8 +10,10 @@ export async function initializeDatabase() {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS quiz_submissions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      booking_uuid TEXT UNIQUE,
       name TEXT NOT NULL,
       email TEXT NOT NULL,
+      email_calendly TEXT,
       phone TEXT NOT NULL,
       location TEXT,
       intent TEXT,
@@ -25,7 +27,7 @@ export async function initializeDatabase() {
   `);
 
   // Migration: Add new columns if they don't exist (for existing tables)
-  const newColumns = ['name', 'location', 'intent', 'availability', 'investment', 'timeline', 'lead_source'];
+  const newColumns = ['name', 'location', 'intent', 'availability', 'investment', 'timeline', 'lead_source', 'booking_uuid', 'email_calendly'];
   for (const column of newColumns) {
     try {
       await db.execute(`ALTER TABLE quiz_submissions ADD COLUMN ${column} TEXT`);
@@ -37,6 +39,11 @@ export async function initializeDatabase() {
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_quiz_submissions_email
     ON quiz_submissions(email)
+  `);
+
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_quiz_submissions_booking_uuid
+    ON quiz_submissions(booking_uuid)
   `);
 
   // Waitlist subscribers table
