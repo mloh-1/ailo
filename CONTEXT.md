@@ -1,316 +1,293 @@
-# AILO Website - CRM Integration Context
+# AILO Website - Project Context
 
-This document contains all the information needed to rewire the CRM integration (previously HubSpot).
+Last updated: January 2025
 
-## Overview
+## Project Overview
 
-The website has a quiz flow that collects user information and determines their outcome (qualified, waitlist, or not-ready). This data needs to be synced to a CRM for sales follow-up and automated email reminders.
-
----
-
-## Integration Points
-
-### 1. Quiz Submission (`src/app/api/quiz-submit/route.ts`)
-
-When a user completes the quiz, the following needs to happen:
-
-#### A. Check for Existing Call Scheduled
-Before allowing a new submission, check if the user already has a call scheduled to prevent duplicate bookings.
-
-```typescript
-// Pseudocode - implement for new CRM
-async function checkCrmCallStatus(email: string): Promise<{ exists: boolean; callScheduled: boolean }> {
-  // Query CRM for contact by email
-  // Check if call_status === "Call Scheduled"
-  // Return { exists: true/false, callScheduled: true/false }
-}
-```
-
-If `callScheduled` is true, return:
-```typescript
-return NextResponse.json(
-  { error: "call_already_scheduled", message: "You already have a call scheduled with us!" },
-  { status: 409 }
-);
-```
-
-The frontend (`src/app/apply/QuizContainer.tsx`) already handles this error and shows a friendly message.
-
-#### B. Create/Update Contact
-After saving to the database, sync the contact to the CRM.
-
-```typescript
-// Pseudocode - implement for new CRM
-async function sendToCrm(data: {
-  name: string;
-  email: string;
-  phone: string;
-  answers: Record<string, string>; // q1-q5
-  outcome: string; // "qualified" | "waitlist" | "not-ready"
-}): Promise<void> {
-  // Build contact payload (see properties below)
-  // Try to create contact
-  // If contact exists (conflict), update instead
-}
-```
+AILO is a matchmaking service website built with Next.js 16. The main flow is:
+1. User takes a qualifying quiz on `/apply`
+2. Based on answers, they're routed to:
+   - **Qualified** → `/book-call` (Calendly booking)
+   - **Waitlist** → Inline confirmation (outside South Florida)
+   - **Not Ready** → `/not-ready` (newsletter signup)
 
 ---
 
-### 2. Call Reminder Cron (`src/app/api/cron/call-reminders/route.ts`)
+## Tech Stack
 
-Sends automated reminder emails to qualified users who haven't booked a call.
-
-#### Schedule
-- **Day 2**: First reminder
-- **Day 4**: Second reminder
-- **Day 9**: Third reminder (final)
-
-#### Query Logic
-Find contacts where:
-- `quiz_outcome` = "Qualified"
-- `call_status` != "Call Scheduled"
-- `createdate` is within the target day range
-
-#### Implementation Notes
-- Use pagination (up to 500 contacts per reminder)
-- Send emails in parallel batches of 10
-- Process all 3 reminder days in parallel
-- Email function: `sendCallReminder(email, name, reminderNumber)` from `@/lib/email`
-
-```typescript
-// Pseudocode for querying contacts
-async function getContactsForReminder(dayNumber: number): Promise<Contact[]> {
-  // Calculate date range for contacts created exactly X days ago
-  const startDate = new Date();
-  startDate.setUTCHours(0, 0, 0, 0);
-  startDate.setUTCDate(startDate.getUTCDate() - dayNumber);
-
-  const endDate = new Date(startDate);
-  endDate.setUTCDate(endDate.getUTCDate() + 1);
-
-  // Query CRM with filters:
-  // - quiz_outcome = "Qualified"
-  // - call_status != "Call Scheduled"
-  // - createdate >= startDate AND createdate < endDate
-
-  // Paginate through results (100 per page, max 500 total)
-}
-```
-
-#### Cron Setup
-Using cron-job.org (free tier):
-- URL: `https://your-domain.com/api/cron/call-reminders`
-- Header: `x-cron-secret: [CRON_SECRET env var]`
-- Schedule: Daily at a reasonable hour (e.g., 9 AM EST)
+- **Framework**: Next.js 16.1.1 (App Router)
+- **Database**: Turso (SQLite edge database)
+- **Email**: Resend
+- **Booking**: Calendly (embedded widget)
+- **Analytics**: Google Analytics 4
+- **Deployment**: Vercel
+- **CRM**: Currently disconnected (was HubSpot, pending rewire)
 
 ---
 
-### 3. Calendly Webhook (for linking bookings)
+## Git Remotes
 
-When a user books a call via Calendly, the webhook receives the `booking_uuid` and can update the database record.
+```bash
+# Primary remote (use this one)
+ailo    https://github.com/mloh-1/ailo.git
 
-#### Booking UUID System
+# Old remote (ignore)
+origin  https://github.com/UrosMijalkovic/ailo-website-poc.git
+```
 
-The website uses a UUID-based linking system to connect quiz submissions with Calendly bookings:
+**Push command**: `git push ailo main`
 
-1. **Quiz Submission**: When a user submits the quiz, a unique `booking_uuid` is generated and stored in the database
-2. **HTTP-Only Cookie**: The UUID is stored in a secure HTTP-only cookie (invisible to user, not in URL)
-3. **Book-Call Page**: Reads the UUID from the cookie and passes it to CalendlyEmbed
-4. **Calendly Prefill**: The UUID is passed to Calendly as a hidden field (`a2` parameter)
-5. **Webhook**: When booking is confirmed, Calendly sends the UUID back, allowing us to:
-   - Link the booking to the original quiz submission
-   - Store `email_calendly` (the email used in Calendly, which may differ from quiz form email)
+---
+
+## Key Files & Architecture
+
+### Quiz Flow
+```
+src/app/apply/page.tsx          → Quiz page wrapper
+src/app/apply/QuizContainer.tsx → Quiz logic & state management
+src/components/quiz/            → Quiz UI components
+src/lib/quiz-data.ts            → Questions & scoring logic
+src/lib/quiz-helpers.ts         → Answer text mappings
+```
+
+### API Routes
+```
+src/app/api/quiz-submit/route.ts           → Saves quiz data to DB, sets booking cookie
+src/app/api/send-booking-confirmation/     → Sends email after Calendly booking
+src/app/api/waitlist/route.ts              → Waitlist signup
+src/app/api/newsletter/route.ts            → Newsletter signup
+src/app/api/cron/call-reminders/route.ts   → Call reminder emails (DISABLED - needs CRM)
+src/app/api/calendly-availability/         → Checks Calendly slot availability
+src/app/api/calendly-oauth/                → Calendly OAuth callback
+```
+
+### Core Libraries
+```
+src/lib/db.ts              → Turso database client & schema
+src/lib/email.ts           → Resend email functions
+src/lib/analytics.ts       → GA4 tracking
+src/lib/quiz-helpers.ts    → Quiz answer mappings
+src/lib/rate-limit.ts      → API rate limiting
+src/lib/recaptcha.ts       → reCAPTCHA verification
+src/lib/calendly-oauth.ts  → Calendly OAuth helpers
+```
+
+### Pages
+```
+src/app/page.tsx           → Homepage
+src/app/apply/             → Quiz page
+src/app/book-call/         → Calendly booking page
+src/app/not-ready/         → "Not ready" outcome page
+src/app/waitlist/          → Waitlist page
+src/app/about/             → About page
+src/app/the-science/       → Science page
+src/app/duo/               → Duo (couples) page
+src/app/blog/              → Blog listing & posts
+```
+
+---
+
+## Database Schema (Turso)
+
+```sql
+-- Main quiz submissions table
+quiz_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  booking_uuid TEXT UNIQUE,     -- Links to Calendly booking
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,          -- Email from quiz form
+  email_calendly TEXT,          -- Email from Calendly (may differ)
+  phone TEXT NOT NULL,
+  location TEXT,                -- Q1 full text
+  intent TEXT,                  -- Q2 full text
+  availability TEXT,            -- Q3 full text
+  investment TEXT,              -- Q4 full text
+  timeline TEXT,                -- Q5 full text
+  outcome TEXT NOT NULL,        -- qualified | waitlist | not-ready
+  lead_source TEXT DEFAULT 'website',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+
+-- Waitlist subscribers
+waitlist_subscribers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  city TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+
+-- Newsletter subscribers
+newsletter_subscribers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  source TEXT DEFAULT 'not-ready',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+---
+
+## Booking UUID System
+
+The website uses a UUID to link quiz submissions with Calendly bookings:
+
+1. **Quiz Submit** → UUID generated, saved to DB, stored in HTTP-only cookie
+2. **Book-Call Page** → Reads UUID from cookie (server-side)
+3. **Calendly Widget** → UUID passed as hidden field `a2`
+4. **Calendly Webhook** → Receives UUID, can update `email_calendly` field
 
 **Cookie Details:**
 - Name: `booking_id`
-- HttpOnly: true (not accessible via JavaScript)
+- HttpOnly: true (invisible to JavaScript)
 - Secure: true in production
 - SameSite: strict
 - MaxAge: 24 hours
 
-#### Database Schema
+**Why two email fields?**
+- `email` = what user entered in quiz form
+- `email_calendly` = what user entered in Calendly (may differ)
+- `booking_uuid` links them together
 
-```sql
-quiz_submissions (
-  id INTEGER PRIMARY KEY,
-  booking_uuid TEXT UNIQUE,      -- UUID generated at quiz submission
-  name TEXT,
-  email TEXT,                    -- Email from quiz form
-  email_calendly TEXT,           -- Email from Calendly booking (set by webhook)
-  phone TEXT,
-  -- ... other fields
-)
+---
+
+## CRM Integration (PENDING)
+
+CRM was HubSpot, now disconnected. Needs to be rewired to new CRM.
+
+### What needs CRM:
+
+1. **Quiz Submit** (`src/app/api/quiz-submit/route.ts`)
+   - Check if user already has call scheduled (prevent duplicates)
+   - Create/update contact with quiz data
+
+2. **Call Reminders** (`src/app/api/cron/call-reminders/route.ts`)
+   - Query for qualified users who haven't booked
+   - Send reminder emails at days 2, 4, 9
+   - Currently returns placeholder response
+
+3. **Calendly Webhook** (not yet created)
+   - Update call_status when booking confirmed
+
+### CRM Properties Needed:
+```
+firstname, email, phone, lead_source, location,
+intent, availability, investment, timeline,
+quiz_outcome, user_status, access_to_ailo_unlimited, call_status
 ```
 
-#### Calendly Custom Questions Setup
-
-In Calendly, create custom questions:
-- **a1**: Phone number (Text, can be hidden)
-- **a2**: Booking UUID (Text, should be hidden)
-
-#### Webhook Handler
-
-```typescript
-// In a Calendly webhook handler
-export async function POST(request: NextRequest) {
-  const payload = await request.json();
-
-  if (payload.event === "invitee.created") {
-    const invitee = payload.payload.invitee;
-    const answers = invitee.questions_and_answers || [];
-
-    // Extract booking UUID from a2 field
-    const bookingUuid = answers.find((a) => a.position === 1)?.answer || "";
-    const emailCalendly = invitee.email;
-
-    if (bookingUuid) {
-      // Update database record with Calendly email
-      await db.execute({
-        sql: `UPDATE quiz_submissions SET email_calendly = ? WHERE booking_uuid = ?`,
-        args: [emailCalendly, bookingUuid],
-      });
-
-      // Also update CRM call_status to "Call Scheduled"
-      await updateCrmCallStatus(bookingUuid, "Call Scheduled");
-    }
-  }
-}
-```
-
----
-
-## CRM Contact Properties
-
-### Required Properties
-
-| Property | Type | Description | Example Values |
-|----------|------|-------------|----------------|
-| `firstname` | string | User's name | "John Doe" |
-| `email` | string | User's email | "john@example.com" |
-| `phone` | string | User's phone | "+1234567890" |
-| `lead_source` | string | Where lead came from | "Website", "App" |
-| `location` | string | User's location category | "Matchmaking Location", "Waitlist Location" |
-| `intent` | string | Q2 answer (full text) | "A committed relationship — I'm ready" |
-| `availability` | string | Q3 answer (full text) | "Open and available" |
-| `investment` | string | Q4 answer (full text) | "Willing to invest" |
-| `timeline` | string | Q5 answer (full text) | "As soon as I find the right person" |
-| `quiz_outcome` | string | Quiz result | "Qualified", "Waitlist", "Not-ready" |
-| `user_status` | string | User status | "No info" |
-| `access_to_ailo_unlimited` | string | Access status | "In Review", "Rejected" |
-| `call_status` | string | Booking status | "Call Scheduled", "" |
-
-### Property Logic
-
-**Location** (based on Q1 answer):
-- Q1 = "A" → "Matchmaking Location" (South Florida)
-- Q1 = "B", "C", "D" → "Waitlist Location" (Outside South Florida)
-
-**Access to AILO Unlimited**:
-- outcome = "not-ready" → "Rejected"
-- outcome = "qualified" or "waitlist" → "In Review"
-
-**Quiz Outcome** (capitalize for CRM):
-- "qualified" → "Qualified"
-- "waitlist" → "Waitlist"
-- "not-ready" → "Not-ready"
-
----
-
-## Quiz Answer Mappings
-
-Use `src/lib/quiz-helpers.ts` for converting answer codes to full text.
-
-### Q1 - Location
-| Code | Text |
-|------|------|
-| A | South Florida (Palm Beach, Broward, Miami-Dade) |
-| B | Florida (outside South Florida) |
-| C | U.S. (outside Florida) |
-| D | Outside the U.S. |
-
-### Q2 - Intent
-| Code | Text |
-|------|------|
-| A | A committed relationship — I'm ready |
-| B | Something serious, but balancing priorities |
-| C | Exploring, no rush |
-| D | Just curious about AILO |
-
-### Q3 - Availability
-| Code | Text |
-|------|------|
-| A | Open and available |
-| B | Mostly open, still processing past experiences |
-| C | Working on it |
-| D | Not fully available right now |
-
-### Q4 - Investment
-| Code | Text |
-|------|------|
-| A | Willing to invest |
-| B | Open to investing, but not certain |
-| C | Prefer minimal investment |
-| D | Not interested in investing |
-
-### Q5 - Timeline
-| Code | Text |
-|------|------|
-| A | As soon as I find the right person |
-| B | Within the next year |
-| C | No specific timeline |
-| D | Not sure yet |
-
----
-
-## Environment Variables Needed
-
-```env
-# New CRM credentials (replace with actual variable names)
-CRM_ACCESS_TOKEN=xxx
-CRM_API_URL=xxx
-
-# Existing (keep these)
-CRON_SECRET=xxx  # For authenticating cron requests
-```
-
----
-
-## Files to Modify
-
-1. **`src/app/api/quiz-submit/route.ts`**
-   - Add `checkCrmCallStatus()` function
-   - Add `sendToCrm()` function
-   - Uncomment/add the CRM calls in the POST handler
-
-2. **`src/app/api/cron/call-reminders/route.ts`**
-   - Add `getContactsForReminder()` function to query new CRM
-   - Restore the full cron logic (see git history for reference)
-
-3. **`src/lib/quiz-helpers.ts`**
-   - Already contains helper functions and type definitions
-   - May need to add CRM-specific payload builder
-
----
-
-## Previous Implementation Reference
-
-The full HubSpot implementation was removed in commit `73e9035`. To see the previous code:
-
+### Previous HubSpot Code Reference:
 ```bash
 git show 2432b5c:src/app/api/quiz-submit/route.ts
 git show 2432b5c:src/app/api/cron/call-reminders/route.ts
-git show 2432b5c:src/lib/hubspot/payloads.ts
 ```
 
 ---
 
-## Testing Checklist
+## Environment Variables
 
-When rewiring to new CRM:
+### Required for Vercel:
+```env
+# Database
+TURSO_DATABASE_URL=libsql://xxx
+TURSO_AUTH_TOKEN=xxx
 
-- [ ] Quiz submission creates contact in CRM
-- [ ] Duplicate email updates existing contact (doesn't error)
-- [ ] "Call already scheduled" check works
-- [ ] Cron job queries contacts correctly
-- [ ] Cron job sends emails to right people
-- [ ] Calendly booking updates call_status (if implemented)
+# Email
+RESEND_API_KEY=xxx
+
+# Calendly
+NEXT_PUBLIC_CALENDLY_URL=https://calendly.com/xxx/discovery-call
+CALENDLY_CLIENT_ID=xxx
+CALENDLY_CLIENT_SECRET=xxx
+CALENDLY_REDIRECT_URI=https://your-domain.com/api/calendly-oauth
+
+# reCAPTCHA
+NEXT_PUBLIC_RECAPTCHA_SITE_KEY=xxx
+RECAPTCHA_SECRET_KEY=xxx
+
+# Analytics
+NEXT_PUBLIC_GA_MEASUREMENT_ID=G-xxx
+
+# Cron
+CRON_SECRET=xxx
+
+# CRM (add when rewiring)
+# CRM_ACCESS_TOKEN=xxx
+```
+
+---
+
+## Calendly Setup
+
+### Custom Questions (in Calendly Event Type):
+- **a1**: Phone number (prefilled from quiz)
+- **a2**: Booking UUID (hidden, for tracking)
+
+### OAuth:
+- Separate OAuth app for website (not shared with n8n)
+- Redirect URI: `https://your-domain.com/api/calendly-oauth`
+
+---
+
+## Quiz Outcome Logic
+
+Located in `src/lib/quiz-data.ts`:
+
+```
+Q1 (Location):
+  A = South Florida → +3 points
+  B/C/D = Outside → 0 points (goes to waitlist)
+
+Q2-Q5: A=3, B=2, C=1, D=0 points
+
+Total Score:
+  12-15 → Qualified
+  8-11  → Qualified (if in South Florida) / Waitlist (if outside)
+  0-7   → Not Ready
+```
+
+---
+
+## Email Templates
+
+Located in `src/lib/email.ts`:
+
+- `sendWaitlistConfirmation(email, city)` - Waitlist signup
+- `sendBookingConfirmation(email, name)` - After Calendly booking
+- `sendCallReminder(email, name, reminderNumber)` - Call reminders (1, 2, 3)
+- `sendBookingCancelledNotification(email, name)` - If booking cancelled
+
+---
+
+## Common Commands
+
+```bash
+# Development
+npm run dev
+
+# Build
+npm run build
+
+# Push to production
+git add -A && git commit -m "message" && git push ailo main
+
+# View previous HubSpot implementation
+git show 2432b5c:src/app/api/quiz-submit/route.ts
+```
+
+---
+
+## Recent Changes (This Session)
+
+1. **Removed HubSpot CRM** - All API calls removed, pending rewire to new CRM
+2. **Added Booking UUID System** - Links quiz submissions to Calendly bookings
+3. **UUID stored in HTTP-only cookie** - Hidden from user (not in URL)
+4. **Database schema updated** - Added `booking_uuid` and `email_calendly` columns
+
+---
+
+## Next Steps (TODO)
+
+- [ ] Wire up new CRM
+- [ ] Create Calendly webhook endpoint to capture bookings
+- [ ] Set up Calendly custom questions (a1=phone, a2=uuid, both hidden)
+- [ ] Re-enable call reminder cron once CRM is connected
